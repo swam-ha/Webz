@@ -127,4 +127,4 @@ class SynScan(BaseScanner):
             return
         
         result = self.__scan(target, port=parsed_args.port, thread=parsed_args.thread)
-        return self.return_value(result, *[target])
+        return self.return_value(result, self.target)
