@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ project[1] if project else 'Project' }}</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #020617; color: #e2e8f0; margin: 0; }
+      .shell { display: grid; grid-template-columns: 320px 1fr; min-height: 100vh; }
+      .sidebar { background: #111827; border-right: 1px solid #334155; padding: 20px; }
+      
+      /* Fixed un-squished layout for sidebar rows */
+      .sidebar-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; }
+      .sidebar-header h3 { margin: 0; }
+      .target-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+      .target-item a { flex: 1; color: #f8fafc; text-decoration: none; display: block; padding: 10px 12px; border-radius: 8px; background: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .target-item a.active { background: #2563eb; }
+      
+      .content { padding: 24px; }
+      .panel { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 20px; }
+      .tabs { display: flex; gap: 12px; margin-bottom: 16px; }
+      .tab { padding: 8px 12px; border-radius: 8px; background: #1f2937; color: #cbd5e1; }
+      .tab.active { background: #2563eb; color: white; }
+      
+      .scan { border: 1px solid #334155; border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+      .scan-header { background: #1f2937; padding: 12px 14px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; transition: background 0.2s; }
+      .scan-header:hover { background: #374151; }
+      .scan-body { display: none; padding: 12px 14px; background: #0f172a; }
+      .scan.open .scan-body { display: block; }
+      
+      .result { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; margin-top: 8px; }
+      .result-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+      
+      /* Standard Action Buttons */
+      .copy-btn, .danger-btn { border: none; color: #f8fafc; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: background 0.2s; }
+      .copy-btn { background: #334155; }
+      .copy-btn:hover { background: #475569; }
+      .danger-btn { background: #dc2626; }
+      .danger-btn:hover { background: #b91c1c; }
+      
+      /* Target Action Button layout adjustments */
+      .icon-btn { background: transparent; border: none; color: #fca5a5; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 6px; transition: background 0.2s, color 0.2s; }
+      .icon-btn:hover { background: #ef444422; color: #ef4444; }
+      
+      .muted { color: #94a3b8; font-size: 0.9rem; }
+      pre { white-space: pre-wrap; word-break: break-word; margin: 0; background: #020617; padding: 8px; border-radius: 6px; border: 1px solid #1e293b; }
+      .empty { color: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h3>Targets</h3>
+          <form method="post" action="{{ url_for('delete_project', project_id=project[0]) }}" onsubmit="return confirm('{{ 'Delete this project and all its targets, scans, and results?' if project_has_data else 'Delete this project?' }}');">
+            <button type="submit" class="danger-btn">Delete Project</button>
+          </form>
+        </div>
+        {% if targets %}
+          {% for target in targets %}
+            <div class="target-item">
+              <a href="{{ url_for('project_detail', project_id=project[0], target=target.target_id) }}" class="{% if target.target_id == selected_target_id %}active{% endif %}">
+                {{ target.address }}
+              </a>
+              <form method="post" action="{{ url_for('delete_target', target_id=target.target_id) }}" onsubmit="return confirm('{{ 'Delete this target and all its scans and results?' if (target_stats[target.target_id].scan_count + target_stats[target.target_id].result_count) > 0 else 'Delete this target?' }}');" style="margin: 0;">
+                <input type="hidden" name="project_id" value="{{ project[0] }}">
+                <button type="submit" class="icon-btn" title="Delete target">🗑</button>
+              </form>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty">No targets saved for this project yet.</div>
+        {% endif %}
+      </aside>
+
+      <main class="content">
+        <div class="panel">
+          <h2>{{ project[1] if project else 'Project' }}</h2>
+          <div class="tabs">
+          </div>
+
+          {% if selected_target_id %}
+            <h3>Scans for scan_id:{{ selected_target_id }}</h3>
+            {% if scans %}
+              {% for scan in scans %}
+                <div class="scan">
+                  <!-- Header click controls panel visibility safely -->
+                  <div class="scan-header" onclick="this.parentElement.classList.toggle('open')">
+                    <strong>{{ scan.tool_name }}</strong>
+                    <div style="display: flex; align-items: center; gap: 12px;" onclick="event.stopPropagation()">
+                      <span class="muted">{{ scan.timestamp }}</span>
+                      
+                      <!-- Unified Delete Scan workflow block -->
+                      <form method="post" action="{{ url_for('delete_scan', scan_id=scan.scan_id) }}" onsubmit="return confirm('Delete this entire scan and all its related results?');" style="margin: 0; display: inline-flex;">
+                        <input type="hidden" name="project_id" value="{{ project[0] }}">
+                        <input type="hidden" name="target_id" value="{{ selected_target_id }}">
+                        <button type="submit" class="danger-btn" style="padding: 2px 8px; font-size: 0.75rem;">Delete Scan</button>
+                      </form>
+                    </div>
+                  </div>
+                  <div class="scan-body">
+                    {% if scan.args %}
+                      <div class="result">
+                        <div class="result-header">
+                          <strong>Arguments</strong>
+                          <button class="copy-btn" onclick="copyText(this)">Copy</button>
+                        </div>
+                        <pre>{{ scan.args | tojson(indent=2) }}</pre>
+                      </div>
+                    {% endif %}
+                    {% if scan.results %}
+                      {% for result in scan.results %}
+                        <div class="result">
+                          <div class="result-header">
+                            <strong>{{ result.key }}</strong>
+                            <button class="copy-btn" onclick="copyText(this)">Copy</button>
+                          </div>
+                          <pre>{{ result.value | tojson(indent=2) }}</pre>
+                        </div>
+                      {% endfor %}
+                    {% else %}
+                      <div class="empty">No result rows stored for this scan.</div>
+                    {% endif %}
+                  </div>
+                </div>
+              {% endfor %}
+            {% else %}
+              <div class="empty">No scans for this target yet.</div>
+            {% endif %}
+          {% else %}
+            <div class="empty">Select a target to view its scan history.</div>
+          {% endif %}
+        </div>
+      </main>
+    </div>
+
+    <script>
+      function copyText(button) {
+        const preBlock = button.closest('.result').querySelector('pre');
+        if (!preBlock) return;
+
+        navigator.clipboard.writeText(preBlock.textContent).then(() => {
+          const originalText = button.textContent;
+          button.textContent = 'Copied!';
+          button.style.background = '#16a34a'; 
+          
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.style.background = '';
+          }, 1500);
+        }).catch(err => {
+          console.error('Failed to copy text: ', err);
+        });
+      }
+    </script>
+  </body>
+</html>
+

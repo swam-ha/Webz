@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Webz Projects</title>
+    <style>
+      body { font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 0; }
+      .wrap { max-width: 1100px; margin: 0 auto; padding: 48px 24px; }
+      h1 { margin-bottom: 24px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+      .card-shell { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 16px; }
+      .card { display: block; text-decoration: none; color: inherit; }
+      .card h2 { margin: 0 0 8px; font-size: 1.1rem; }
+      .card p { margin: 0; color: #94a3b8; }
+      .card-shell:hover { border-color: #38bdf8; }
+      .actions { margin-top: 12px; }
+      .danger-btn { background: #dc2626; color: white; border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+      .empty { color: #94a3b8; padding: 16px 0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Projects</h1>
+      {% if projects %}
+        <div class="grid">
+          {% for project in projects %}
+            <div class="card-shell">
+              <a class="card" href="{{ url_for('project_detail', project_id=project.project_id) }}">
+                <h2>{{ project.project_name }}</h2>
+                <p>Open project dashboard</p>
+              </a>
+              <div class="actions">
+                <form method="post" action="{{ url_for('delete_project', project_id=project.project_id) }}" onsubmit="return confirm('{{ 'Delete this project and all its targets, scans, and results?' if project.has_data else 'Delete this project?' }}');">
+                  <button type="submit" class="danger-btn">Delete</button>
+                </form>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty">No projects have been created yet.</div>
+      {% endif %}
+    </div>
+  </body>
+</html>
