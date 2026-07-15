@@ -70,27 +70,27 @@ class UserInterface:
     
     def __create_project(self, user: str) -> None:
         args = self.__get_parameter(user)
-        if args:
+        try:
             new_project_name = args["args"][0]
-        else: return
+        except Exception: return
         
         if self.db.add_new_project(new_project_name) == 0:
             logger.info(f"Project name: {new_project_name} created.")
 
     def __delete_project(self, user):
         args = self.__get_parameter(user)
-        if args:
+        try:
             delete_project_id = args["args"][0]
-        else: return
+        except Exception: return
         
         if self.db.delete_project_by_id(delete_project_id):
             logger.info(f"Deleted a project - id: {delete_project_id}")
     
     def __select_project(self, user: str) -> None:
         args = self.__get_parameter(user)
-        if args:
+        try:
             selected_project_id = args["args"][0]
-        else: return
+        except Exception: return
 
         project = self.db.get_project(selected_project_id)
         if project:
