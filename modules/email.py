@@ -87,8 +87,9 @@ class EmailScan(BaseScanner):
 
             print(f"\033[94m[*]\033[0m Trying {self._shorten(url)}")
             try:
-                if self.stop_requested.is_set(): return
                 response = self.session.get(url, headers={"User-Agent": self.ua.random}, timeout=(3.05, 10))
+                if self.stop_requested.is_set(): return
+                
             except requests.exceptions.Timeout:
                 print(f"\033[94m[!]\033[0m Request timeout trying to reach {self._shorten(url)}")
                 return
@@ -100,9 +101,11 @@ class EmailScan(BaseScanner):
             # check if its a pdf
             if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
                 try:
+                    self.stop_requested.is_set()
                     print(f"\033[92m[+]\033[0m PDF file detected at {self._shorten(url)} ")
                     pdf_file = io.BytesIO(response.content)
                     reader = PdfReader(pdf_file)
+                    self.stop_requested.is_set()
                     for page in reader.pages:
                         text_to_scan += page.extract_text() + '\n'
                 except Exception:
@@ -112,11 +115,14 @@ class EmailScan(BaseScanner):
                 text_to_scan = response.text
                 
             emails = self._extract_emails(text_to_scan)
-            
+            if self.stop_requested.is_set(): return
+
             if emails:
                 with self.results_lock:
                     new = [e for e in emails if e not in self.email_list]
                     if new:
+                        if self.stop_requested.is_set(): return
+
                         print(f"\033[92m[+]\033[0m Found: {new}")
                         self.email_list.update(new)
                         self.results.append({"emails": new, "url": url})
@@ -124,7 +130,9 @@ class EmailScan(BaseScanner):
             # Queue discovery
             if target_domain in urlparse(url).netloc.lower():
                 soup = BeautifulSoup(response.text, "html.parser")
+                if self.stop_requested.is_set(): return
                 for a in soup.find_all("a", href=True):
+                    if self.stop_requested.is_set(): return
                     full_url = urljoin(url, a["href"]).split('#')[0]
                     if full_url.startswith("http") and not any(full_url.endswith(ext) for ext in self.IGNORE_EXTENSIONS):
                         # Submit new task to executor
