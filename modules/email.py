@@ -22,6 +22,12 @@ class EmailScan(BaseScanner):
         self.session = requests.Session()
         self.ua = UserAgent()
         self.reset()
+        
+        self.IGNORE_EXTENSIONS = (
+            '.png', '.jpg', '.jpeg', '.gif', '.svg', '.bmp', '.webp', # Images
+            '.exe', '.msi', '.bin', '.zip', '.tar', '.gz', '.rar',    # Binaries/Archives
+            '.mp4', '.avi', '.mov', '.mp3', '.wav',                    # Media
+        )
 
     def reset(self):
         self.scanned_links = set()
@@ -58,6 +64,9 @@ class EmailScan(BaseScanner):
             return self.return_value(output, parsed.url)
         except Exception as e:
             return self.return_value(f"Error: {str(e)}", None)
+        
+    def _shorten(self, text, length=30):
+        return (text[:length] + '...') if len(text) > length else text
 
     def _extract_emails(self, text):
         pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.(?!png|jpg|jpeg|gif|pdf|svg|css|js)[a-zA-Z]{2,}'
@@ -76,10 +85,14 @@ class EmailScan(BaseScanner):
                     return
                 self.scanned_links.add(url)
 
-            if self.stop_requested.is_set(): return
-            print(f"\033[94m[*]\033[0m Trying {url}")
-            if self.stop_requested.is_set(): return
-            response = self.session.get(url, headers={"User-Agent": self.ua.random}, timeout=(3.05, 10))
+            print(f"\033[94m[*]\033[0m Trying {self._shorten(url)}")
+            try:
+                if self.stop_requested.is_set(): return
+                response = self.session.get(url, headers={"User-Agent": self.ua.random}, timeout=(3.05, 10))
+            except requests.exceptions.Timeout:
+                print(f"\033[94m[!]\033[0m Request timeout trying to reach {self._shorten(url)}")
+                return
+            
             if self.stop_requested.is_set(): return
             content_type = response.headers.get('Content-Type', '').lower()
             text_to_scan = ""
@@ -87,7 +100,7 @@ class EmailScan(BaseScanner):
             # check if its a pdf
             if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
                 try:
-                    print(f"\033[92m[+]\033[0m PDF file detected at {url} ")
+                    print(f"\033[92m[+]\033[0m PDF file detected at {self._shorten(url)} ")
                     pdf_file = io.BytesIO(response.content)
                     reader = PdfReader(pdf_file)
                     for page in reader.pages:
@@ -113,7 +126,7 @@ class EmailScan(BaseScanner):
                 soup = BeautifulSoup(response.text, "html.parser")
                 for a in soup.find_all("a", href=True):
                     full_url = urljoin(url, a["href"]).split('#')[0]
-                    if full_url.startswith("http"):
+                    if full_url.startswith("http") and not any(full_url.endswith(ext) for ext in self.IGNORE_EXTENSIONS):
                         # Submit new task to executor
                         executor.submit(self.process_url, full_url, target_domain, executor)
         except Exception:
@@ -128,19 +141,21 @@ class EmailScan(BaseScanner):
     def crawl(self, base_url, workers):
         target_domain = urlparse(base_url).netloc.lower()
         
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            executor.submit(self.process_url, base_url, target_domain, executor)
-            
-            try:
+        
+        try:
+            print(f"\033[92m[+]\033[0m Starting scan on {base_url} with maximum of {workers} threads")
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                executor.submit(self.process_url, base_url, target_domain, executor)
+                
                 with self.cv:
                     while self.active_tasks > 0:
                         self.cv.wait(timeout=1.0)
-            except KeyboardInterrupt:
-                self.stop_requested.set()
-                self.session.close()
-                print("\n[!] Stopping crawler...")
-                self.session = requests.Session() # recreate session for next time
-                # Force the executor to stop accepting new tasks
-                executor.shutdown(wait=True, cancel_futures=True)
-                # Re-raise to be caught by run()
-                raise KeyboardInterrupt
+        except KeyboardInterrupt:
+            self.stop_requested.set()
+            self.session.close()
+            print("\n[!] Stopping crawler...")
+            self.session = requests.Session() # recreate session for next time
+            # Force the executor to stop accepting new tasks
+            executor.shutdown(wait=True, cancel_futures=True)
+            # Re-raise to be caught by run()
+            raise KeyboardInterrupt
