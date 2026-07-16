@@ -9,6 +9,8 @@ from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 from modules.base import BaseScanner, ScanResult
 from fake_useragent import UserAgent
+from pypdf import PdfReader
+import io
 
 # Silence noisy third-party loggers
 logging.getLogger("requests").propagate = False
@@ -74,14 +76,35 @@ class EmailScan(BaseScanner):
                     return
                 self.scanned_links.add(url)
 
+            if self.stop_requested.is_set(): return
+            print(f"\033[94m[*]\033[0m Trying {url}")
+            if self.stop_requested.is_set(): return
             response = self.session.get(url, headers={"User-Agent": self.ua.random}, timeout=(3.05, 10))
-            emails = self._extract_emails(response.text)
+            if self.stop_requested.is_set(): return
+            content_type = response.headers.get('Content-Type', '').lower()
+            text_to_scan = ""
+
+            # check if its a pdf
+            if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
+                try:
+                    print(f"\033[92m[+]\033[0m PDF file detected at {url} ")
+                    pdf_file = io.BytesIO(response.content)
+                    reader = PdfReader(pdf_file)
+                    for page in reader.pages:
+                        text_to_scan += page.extract_text() + '\n'
+                except Exception:
+                    # if pdf file is encrypted or corrupted, skip it
+                    return
+            else:
+                text_to_scan = response.text
+                
+            emails = self._extract_emails(text_to_scan)
             
             if emails:
                 with self.results_lock:
                     new = [e for e in emails if e not in self.email_list]
                     if new:
-                        print(f"[+] Found: {new}")
+                        print(f"\033[92m[+]\033[0m Found: {new}")
                         self.email_list.update(new)
                         self.results.append({"emails": new, "url": url})
 
@@ -118,6 +141,6 @@ class EmailScan(BaseScanner):
                 print("\n[!] Stopping crawler...")
                 self.session = requests.Session() # recreate session for next time
                 # Force the executor to stop accepting new tasks
-                executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=True, cancel_futures=True)
                 # Re-raise to be caught by run()
                 raise KeyboardInterrupt
